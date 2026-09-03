@@ -10,6 +10,52 @@ Wi-Fi and Omarchy/Limine and adjusts what it installs accordingly — see
 
 Run: `./install.sh`
 
+## Tested hardware
+
+Only actually tested on one machine:
+
+- **MacBookPro14,1** (13", 2017, no Touch Bar) — Intel Kaby Lake, Iris Plus
+  Graphics 640, Broadcom BCM4350 802.11ac Wi-Fi (`brcmfmac`)
+- **Omarchy** (Arch + Hyprland), kernel `7.1.9-arch1-2`
+- LUKS (`cryptdevice=`) + btrfs root, with swap as a **file** in its own
+  dedicated `swap` subvolume (not a separate partition)
+- **Limine** bootloader building a Unified Kernel Image (UKI), not a
+  plain initramfs
+
+`core/` (lid-lock, Bluetooth guard) should work as-is on other laptops —
+it only depends on standard systemd/logind and the generic ACPI "Lid
+Switch" input device, both far more universal than this one machine. The
+`macbook-broadcom/` extras and the suspend/hibernate root-cause notes
+below are specific to this hardware and may not transfer:
+
+- **Disk/swap setup is the most likely thing to differ.** `resume=` and
+  `resume_offset=` are tied to exactly how your swap is laid out: a swap
+  **partition** only needs `resume=<partition>` (no offset at all), while
+  a swap **file** needs `resume_offset=` computed for your filesystem
+  (`btrfs inspect-internal map-swapfile -r` is btrfs-specific; ext4/xfs
+  use different tools). A non-LUKS install has no `cryptdevice=`/mapper
+  device to route through in the first place. None of this is handled by
+  `install.sh` — the hibernate pieces here document what was tried on
+  this specific disk layout, not a general fix.
+- **Wi-Fi chipset varies by model/year.** `install.sh` only auto-detects
+  Broadcom `brcmfmac`. Other MacBook Wi-Fi generations (e.g. BCM4360 on
+  older models, BCM4364/4377 on 2019+ models) may behave differently or
+  not need this hook at all; non-Broadcom hardware (Intel, Atheros,
+  Realtek) will correctly skip `macbook-broadcom/` entirely.
+- **T2-equipped MacBooks (2018+) are a different failure mode.** This
+  machine predates the T2 chip. Community reports suggest T2 models hit
+  suspend/hibernate issues for different reasons (Touch Bar
+  re-enumeration, T2-managed devices) — the fixes here aren't confirmed
+  to apply there.
+- **Bootloader/initramfs.** The `mkinitcpio -P` / `limine-mkinitcpio`
+  rebuild step is Omarchy/Limine-specific. GRUB, systemd-boot with a
+  plain initramfs, or dracut-based setups need a different rebuild
+  command entirely.
+
+If you try this on a different MacBook model or a non-Mac laptop,
+opening an issue with what changed (and what worked) would help fill
+this section in.
+
 ## Why lock instead of suspend/hibernate
 
 Originally built for a 2017 MacBookPro14,1 (Intel, Broadcom BCM4350 wifi)
