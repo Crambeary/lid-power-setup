@@ -1,0 +1,11 @@
+[Unit]
+Description=Block Bluetooth radio while the laptop lid is closed
+After=multi-user.target
+
+[Service]
+ExecStart=/usr/local/bin/lid-bluetooth-guard.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
