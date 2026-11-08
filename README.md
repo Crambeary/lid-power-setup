@@ -1,14 +1,71 @@
 # lid-power-setup
 
-Safe lid-close power saving for laptops where real suspend/hibernate is
-unreliable: locks and blanks the screen instead of sleeping, and blocks
-the Bluetooth radio while the lid is physically closed.
+A personal Linux workaround for a laptop where suspend and hibernate proved
+unreliable: request a screen lock on lid close, let the desktop's idle cycle
+blank the screen, and block Bluetooth while the lid is physically closed.
+**The laptop stays awake.** This does not provide suspend-level power savings.
 
-Works on any systemd Linux distro. `install.sh` auto-detects Broadcom
-Wi-Fi and Omarchy/Limine and adjusts what it installs accordingly — see
-`macbook-broadcom/` for the hardware-specific pieces.
+Built and tested on the MacBook/Omarchy setup below. The core uses systemd,
+logind, Python 3, `rfkill`, and a Linux input device named `Lid Switch`.
+Other systems need their own verification, including a desktop that handles
+logind's lock request. Broadcom and Omarchy/Limine extras are conditional.
 
-Run: `./install.sh`
+## Install and verify
+
+Read [`install.sh`](install.sh) before running it. It writes system files
+with sudo, restarts `systemd-logind` and the Bluetooth guard, and enables the
+guard at boot. Restarting logind can disrupt a desktop session; save work
+and run this when an interruption is acceptable.
+
+```bash
+git clone https://github.com/Crambeary/lid-power-setup
+cd lid-power-setup
+./install.sh
+```
+
+The installer expects Python 3, `rfkill`, systemd tools, and hardware detection
+commands (`lsmod`/`lspci`) to be available; it is not a package installer.
+Back up any existing files at the destination paths first: the installer
+replaces them without keeping backups.
+
+After installation:
+
+```bash
+systemctl is-enabled lid-bluetooth-guard.service
+systemctl is-active lid-bluetooth-guard.service
+journalctl -u lid-bluetooth-guard.service -b --no-pager
+rfkill list bluetooth
+```
+
+With work saved, close and reopen the lid. Confirm the screen actually locks
+and Bluetooth blocks on close and unblocks on open. The guard acts on the
+physical lid even when docked; only logind's **lock** action ignores the
+docked case. It unblocks Bluetooth on open rather than restoring a previous
+manual block. If no `Lid Switch` device is found, the service keeps retrying;
+inspect the journal above.
+
+## Undo
+
+There is no uninstall script. Disable the guard before removing its files:
+
+```bash
+sudo systemctl disable --now lid-bluetooth-guard.service
+sudo rm /etc/systemd/system/lid-bluetooth-guard.service
+sudo rm /usr/local/bin/lid-bluetooth-guard.py
+sudo rm /etc/systemd/logind.conf.d/lid-switch.conf
+sudo systemctl daemon-reload
+```
+
+Remove these optional files only if this installer created them, restoring
+any backups you made:
+
+- `/usr/lib/systemd/system-sleep/brcmfmac-cycle.sh`
+- `/etc/systemd/system/systemd-hibernate-resume.service.d/order.conf`
+- `~/.config/omarchy/hooks/post-boot.d/lid-power-setup-check.sh`
+
+Run `sudo systemctl daemon-reload` again after removing a drop-in. Reboot
+when convenient to reload logind's remaining configuration. If Bluetooth
+remains software-blocked, run `sudo rfkill unblock bluetooth` when desired.
 
 ## Tested hardware
 
@@ -78,12 +135,12 @@ running Omarchy, where both suspend and hibernate proved unreliable:
   `quiet splash` temporarily) rather than more blind reboot cycles.
 
 So lid-close is set to **lock** instead: the screen locks immediately and
-blanks shortly after via the desktop's normal idle cycle, with zero risk
-of a dead-on-wake machine. If your suspend/hibernate is reliable, you
+blanks shortly after via the desktop's normal idle cycle, without relying
+on a successful suspend/resume cycle. If your suspend/hibernate is reliable, you
 don't need this — `HandleLidSwitch=suspend` and real sleep will always
 beat this on battery life.
 
-## What's in `core/` (any systemd Linux)
+## What's in `core/`
 
 - `lid-switch.conf` -> `/etc/systemd/logind.conf.d/` — lid close (on
   battery or AC) locks the session; docked (external display/keyboard)
@@ -118,7 +175,8 @@ sudo mkinitcpio -P    # it will offer to run limine-mkinitcpio for you — accep
 ## Self-healing boot check (optional, Omarchy only)
 
 `install.sh` drops `check-health.sh` into
-`~/.config/omarchy/hooks/post-boot.d/` if that directory exists. It's
+`~/.config/omarchy/hooks/post-boot.d/` if `~/.config/omarchy/hooks/` exists
+(creating `post-boot.d/` if needed). It's
 read-only and never elevates privileges on its own — it just notifies you
 if something's missing so you can rerun `install.sh` yourself. (A hook
 that silently `sudo`'d on every boot would just hang waiting on a
